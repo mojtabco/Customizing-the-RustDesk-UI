@@ -220,6 +220,20 @@ pub const RS_PUB_KEY: &'static str = "your_public_key_here";
 
   - The file `index.css` is used for styling and design. You can apply your personal customizations along with the main project files.
 - Run `python res/inline-sciter.py` after each change.
+- ##### For faster UI development, it is recommended to skip Step 6. Enable Inline Build (Embed UI).
+
+  After building the executable, copy the generated executable file along with the `src\ui` folder to:
+
+  `C:\tempui\`
+
+  This workflow is very useful for making quick design changes. You can modify the UI directly in the `ui` folder, test the changes, and iterate quickly.
+
+  Once you have finished the design, copy the updated `ui` folder back to the project's root directory, then continue with the remaining compilation and executable build steps.
+
+- ##### The generated executable will be located in the following directory:
+
+  C:\rustdesk\target\release\
+
 
 ---
 
