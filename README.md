@@ -91,6 +91,13 @@ default-run = "mycompany" # must match 'name'
 name = "My Company" # Display name
 identifier = "com.mycompany.remote"
 icon = ["res/32x32.png", "res/128x128.png", "res/128x128@2x.png"]
+
+[package.metadata.winres]
+LegalCopyright = "Copyright © 2026 Purslane Tech Pte. Ltd. All rights reserved."
+ProductName = "MyCompany"
+FileDescription = "MyCompany Remote Desktop"
+OriginalFilename = "MyCompany.exe"
+
 ```
 
 ### 3. Change APP_NAME in `config.rs`
@@ -100,7 +107,7 @@ pub static ref APP_NAME: Arc<RwLock<String>> = Arc::new(RwLock::new("My Company"
 ```
 
 ### 4. Changing the application icons in `ui.rs`
-In `/rustdesk/src/ur.rs` (last line):
+In `/rustdesk/src/ui.rs` (last line):
 ```rust
 pub fn get_icon() -> String {
     // 128x128
@@ -130,16 +137,17 @@ In `/rustdesk/src/main.rs`
 )))]
 fn main() {
 
-     //BEGIN CHANGES
+    //BEGIN CHANGES
     //Embed the Sciter.dll file into the exe, and then write it to disk when application starts
     println!("================ LOADING SCITER DLLL ==================");
     let bytes = std::include_bytes!("..\\sciter.dll"); //since main.rs is in rustdesk/src, we need to go up one level (to rustdesk)
     std::fs::write("sciter.dll", bytes.as_slice());
-    //END CHANGES
     
     if !common::global_init() {
         return;
     }
+    //END CHANGES
+
     #[cfg(all(windows, not(feature = "inline")))]
     unsafe {
         winapi::um::shellscalingapi::SetProcessDpiAwareness(2);
@@ -149,6 +157,51 @@ fn main() {
     }
     common::global_clean();
 }
+```
+
+```rust
+> Note: For Windows 7 compatibility
+// Instead of linking directly (statically) to shcore.dll, which is not available on Windows 7 and causes the error "The program can't start because 
+// api-ms-win-shcore-scaling-l1-1-1.dll is missing", we load this function dynamically at runtime and make it optional.
+// please make these changes so that shcore.dll is loaded dynamically at runtime only when it is available.
+fn main() {
+    println!("================ LOADING SCITER DLLL ==================");
+    let bytes = std::include_bytes!("..\\sciter.dll"); //since main.rs is in rustdesk/src, we need to go up one level (to rustdesk)
+    std::fs::write("sciter.dll", bytes.as_slice());
+   
+    if !common::global_init() {
+        return;
+    }
+    #[cfg(all(windows, not(feature = "inline")))]
+    unsafe {
+        use std::ffi::CString;
+        use winapi::um::libloaderapi::{FreeLibrary, GetProcAddress, LoadLibraryA};
+
+        let mut handled = false;
+        let shcore_name = CString::new("shcore.dll").unwrap();
+        let shcore = LoadLibraryA(shcore_name.as_ptr());
+        if !shcore.is_null() {
+            let fn_name = CString::new("SetProcessDpiAwareness").unwrap();
+            let proc = GetProcAddress(shcore, fn_name.as_ptr());
+            if !proc.is_null() {
+                let set_process_dpi_awareness: extern "system" fn(i32) -> i32 =
+                    std::mem::transmute(proc);
+                set_process_dpi_awareness(2);
+                handled = true;
+            }
+            FreeLibrary(shcore);
+        }
+        if !handled {
+          
+            winapi::um::winuser::SetProcessDPIAware();
+        }
+    }
+    if let Some(args) = crate::core_main::core_main().as_mut() {
+        ui::start(args);
+    }
+    common::global_clean();
+}
+
 ```
 
 ```rust
@@ -167,11 +220,19 @@ Edit `Cargo.toml`:
  
   `default = ["use_dasp"]`  change to `default = ["use_dasp", "inline"]`
 
-Run:
+From the Windows Start menu, search for:
+
+x64 Native Tools Command Prompt for VS 2026 or, if you have Visual Studio 2022 installed:
+x64 Native Tools Command Prompt for VS 2022
+
+Make sure you select x64 Native Tools Command Prompt for VS 2026 or x64 Native Tools Command Prompt for VS 2022 from the search results, depending on your installed Visual Studio version.
+
+You specifically need the x64 Native Tools Command Prompt for Visual Studio.
+Then run:
 ```cmd
 python res\inline-sciter.py
 ```
-> Note: This command must be run in CMD.
+> Note:  Do not open: Command Prompt (CMD), PowerShell or Git Bash
 
 ---
 
@@ -239,21 +300,60 @@ pub const RS_PUB_KEY: &'static str = "your_public_key_here";
 
 ## Build for Windows
 Embedding UI / Enable Inline Builds
-```cmd
-python res\inline-sciter.py
-```
-> Note: This command must be run in CMD.
+From the Windows Start menu, search for:
 
-Build and run application
-```bash
+x64 Native Tools Command Prompt for VS 2026 or, if you have Visual Studio 2022 installed:
+x64 Native Tools Command Prompt for VS 2022
+
+Make sure you select x64 Native Tools Command Prompt for VS 2026 or x64 Native Tools Command Prompt for VS 2022 from the search results, depending on your installed Visual Studio version.
+
+You specifically need the x64 Native Tools Command Prompt for Visual Studio.
+
+Then run:
+```cmd
+set VCPKG_ROOT=C:\vcpkg
+python res\inline-sciter.py
 cargo build --release
 ```
+> Note:  Do not open: Command Prompt (CMD), PowerShell or Git Bash
+
 
 - Output: `rustdesk\target\release`
 - Copy `sciter.dll` into same folder as `.exe` before running on other systems.
 
----
 
+> Note: Building the Windows 7 Version
+
+To build a RustDesk executable that is compatible with **Windows 7**, you need to use an older Rust toolchain version that still supports Windows 7.
+
+Install the required Rust toolchain by running:
+```bash
+rustup toolchain install 1.77.2-x86_64-pc-windows-msvc
+```
+
+##### Option 1: Use `rust-toolchain.toml`
+
+In the root directory of the RustDesk project, create a file named `rust-toolchain.toml` (or edit it if it already exists):
+
+```toml
+[toolchain]
+channel = "1.77.2"
+```
+
+Rustup will automatically use Rust **1.77.2** when building the project.
+
+##### Option 2: Set a Directory Override
+
+If you prefer not to create a `rust-toolchain.toml` file, you can set the Rust version specifically for the RustDesk project directory:
+
+```bash
+cd C:\rustdesk
+rustup override set 1.77.2
+```
+
+This will configure Rust **1.77.2** as the default toolchain for the `C:\rustdesk` directory.
+
+---
 ## Troubleshooting & Tips
 
 - Clear cache after replacing icons:  
